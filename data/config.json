@@ -1,0 +1,14 @@
+{
+  "AP-Mode": true,
+  "STA-Mode": {
+    "SSID": "",
+    "Pwd": ""
+  },
+  "BT-Mirror-Mode": false,
+  "I2C-Mode": { 
+    "Enabled": false,
+    "Pullup": true,
+    "Address": 88
+  }
+}
+
