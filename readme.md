@@ -39,7 +39,7 @@ There you'll be able to modify the settings comfortabely.
 Alternatively, you can edit the config.json file from the **data** directory in order to achive the same.
 
 [SMuFF]: https://github.com/technik-gegg/SMuFF
-[1]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_I2C_Duet.png "Mode 1"
+[1]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_full.png "Mode 1"
 [2]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_serial.png "Mode 2"
 [3]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_I2C_Duet.png "Mode 3"
 [4]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_I2C_Marlin.png "Mode 4"
