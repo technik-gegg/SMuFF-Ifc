@@ -4,12 +4,24 @@ char b[256];
 
 extern unsigned long dataCntDuet, dataCntPanelDue, dataCntSmuff, dataCntI2C;
 
+/**
+ * This method scans the available WiFi networks when requested by the index.html through parseCommand.
+ * 
+ * @returns The number of networks in range.
+ */
 int scanNetworks() {
   int n = WiFi.scanNetworks();
   __debug("WiFi scan done. %s networks found.\n", (n == 0) ? "No" : String(n).c_str());
   return n;
 }
 
+/**
+ * Method to parse/alter settings.
+ * 
+ * @param     data      The additional data describing the setting.
+ * @param     client    The client instance who initiated the action.
+ * @returns   Nothing.
+ */
 void parseSetting(const char* data, AsyncWebSocketClient* client) 
 {
   String cmd = (const char*)data;
@@ -39,6 +51,13 @@ void parseSetting(const char* data, AsyncWebSocketClient* client)
   }
 }
 
+/**
+ * Method to parse commands from within the index.html and answer accordingly.
+ * 
+ * @param     data      The additional data describing the setting.
+ * @param     client    The client instance who initiated the action.
+ * @returns   Nothing.
+ */
 void parseCommand(const char* data, AsyncWebSocketClient* client) 
 {
   String cmd = (const char*)data;
@@ -82,7 +101,6 @@ void parseCommand(const char* data, AsyncWebSocketClient* client)
     unsigned char encodedPwd[64];
     unsigned char cipherPwd[64];
     cipher((unsigned char*)&data[10], cipherPwd);
-    //__debug(">>>%s\n", &data[10]);
     int result = mbedtls_base64_encode(encodedPwd, sizeof(encodedPwd), &len, cipherPwd, 16);
     switch(result) {
       case MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL:
@@ -93,7 +111,6 @@ void parseCommand(const char* data, AsyncWebSocketClient* client)
           return;
     }
     strlcpy(_config.pwd, (const char*)encodedPwd, sizeof(_config.pwd));
-    //__debug(">>> %s\n",encodedPwd);
     sprintf(b, "P:%s", encodedPwd);
     client->text("P:OK");
   }

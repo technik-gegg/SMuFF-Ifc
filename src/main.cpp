@@ -31,7 +31,7 @@
 #include "WebSocketTools.h"
 #include "driver/i2c.h"
 
-#define HOST_NAME     "smuffifc"
+#define HOST_NAME     "smuffifc"                  // basic host name
 #define RXD0          3
 #define TXD0          1
 #define RXD1          16
@@ -53,33 +53,40 @@
 extern SmuffIfcConfig  _config;
 
 AsyncWebServer  webServer(80);
-AsyncWebSocket  winsock("/smuffifc");     // access at ws://[esp ip-address]/smuffifc
+AsyncWebSocket  winsock("/smuffifc");     // access at ws://[esp ip-address]/smuffifc (see index.html)
 HardwareSerial  SerialDuet(0);
 HardwareSerial  SerialSmuff(1);
 HardwareSerial  SerialPanelDue(2);
-BluetoothSerial SerialBT;           // used for debugging
+BluetoothSerial SerialBT;                 // used for debugging or mirroring trafic to PanelDue 
 
-const char* passwordAP = "12345678";
+const char* passwordAP = "12345678";      // default password when in AP mode
 
-IPAddress apLocalIp(192, 168, 44, 1);
+IPAddress apLocalIp(192, 168, 44, 1);     // IP-Address when in AP mode (must be defined for DHCP)
 IPAddress apGateway(192, 168, 44, 1);
 IPAddress apNetmask(255, 255, 255, 0);
 
-unsigned long baudrate = 57600;
+unsigned long baudrate = 57600;           // must match the settings of the Duet3D/PanelDue
 static bool   smuffMode = false;
 static bool   cmdMode = false;
-int           pinSelected = 0;
+static int    pinSelected = 0;
 IPAddress     localIp;
 bool          webServerRunning = false;
 bool          mdnsRunning = false;
-unsigned long dataCntSmuff = 0;
+unsigned long dataCntSmuff = 0;         // data counters for debugging
 unsigned long dataCntDuet = 0;
 unsigned long dataCntPanelDue = 0;
 unsigned long dataCntI2C = 0;
-byte          i2cBuffer[80];
+byte          i2cBuffer[40];
 
 String _hostname = HOST_NAME;
 
+/**
+ * Function to output some debug information to a serial port (Bluetooth in this case).
+ * 
+ * @param fmt   The desired format
+ * @param ...   A list of parameters that match the format string
+ * @returns     Nothing
+ */
 void __debug(const char* fmt, ...) {
   if(!_config.btMirrorMode) {
     char _tmp[1024];
@@ -91,11 +98,20 @@ void __debug(const char* fmt, ...) {
   }
 }
 
-// just for testing purposes
+/**
+ * Toggles the LED. Used for testing purposes.
+ */
 void blinkLED() {
   digitalWrite(LED_PIN, !digitalRead(LED_PIN));
 }
 
+/**
+ * Function to decrypt an encrypted password.
+ * This method is used to decrypt the encrypted WiFi password stored in the 
+ * configuration file if you decide to use STA mode instead of AP mode.
+ * 
+ * @param output  A pointer to the character array receiving the dechipherd password.
+ */
 void getDecipherdPwd(unsigned char* output)
 {
     size_t len;
@@ -113,6 +129,12 @@ void getDecipherdPwd(unsigned char* output)
     decipher(decodedPwd, output);
 }
 
+/**
+ * Sets up the Over-The-Air update feature of the ESP.
+ * Might be useful if it comes to update the SMuFF-Ifc firmware while attached to the other electronics. 
+ * 
+ * @returns	  Nothing
+ */
 void setupOTA() {
 
 	ArduinoOTA.onStart([]() {
@@ -137,6 +159,11 @@ void setupOTA() {
 	ArduinoOTA.begin();
 }
 
+/**
+ * Sets up the WiFi connection depending on the settings.
+ * 
+ * @returns	  Nothing
+ */
 void setupWiFi() {
   unsigned char output[16];
   
@@ -197,6 +224,12 @@ void setupWiFi() {
   }
 }
 
+/**
+ * Sets up the mobile DNS.
+ * Uses the hostname and the last 6 character of the MAC address to form the unique name. 
+ * 
+ * @returns   Nothing. Sets mdnsRunning flag accordingly.
+ */
 void setupMdns() {
   if(MDNS.begin(_hostname.c_str())) {
     MDNS.addService("http", "tcp", 80);
@@ -207,7 +240,22 @@ void setupMdns() {
   }
 }
 
-void onEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
+/**
+ * Event handler for the WebSocket communication.
+ * This event handles only text data. Binary data will be responded with Error.
+ * The first two byte of data designate whether its a function call "F:" or a setting call "S:".
+ * 
+ * @see       parseCommand, parseSetting
+ * 
+ * @param     server  The server instance
+ * @param     client  The connected client instance
+ * @param     type    The event type
+ * @param     arg     The arguments depending on the event type
+ * @param     data    The data which has been received from the client
+ * @param     len     The length of the data
+ * @returns   Nothing
+ */
+void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len)
 {
   if(type == WS_EVT_CONNECT){
     __debug(">>> ws[%s][%u] has connected\n", server->url(), client->id());
@@ -235,7 +283,7 @@ void onEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventTyp
         }
       } 
       else {
-        client->text("E:No binary data support");
+        client->text("E:No binary data supported yet");
         __debug("Binary data received from WinSock\n");
         for(size_t i=0; i < info->len; i++){
           __debug("%02x ", data[i]);
@@ -246,6 +294,11 @@ void onEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventTyp
   }
 }
 
+/**
+ * Sets up the Web server.
+ * 
+ * @returns   Nothing. Sets webServerRunning flag accordingly.
+ */
 void setupWebServer() {
 
   winsock.onEvent(onEvent);
@@ -264,6 +317,13 @@ void setupWebServer() {
   webServerRunning = true;
 }
 
+/**
+ * Browse SPIFFS for files.
+ * 
+ * @param     root      The folder where to start
+ * @param     numtabs   The number of tabs to insert for each nested level
+ * @returns   Nothing.
+ */
 void browseDir(File root, int numTabs) {
   while(true) {
     File entry =  root.openNextFile();
@@ -285,6 +345,13 @@ void browseDir(File root, int numTabs) {
   }
 }
 
+/**
+ * Browses and lists the files in a directory recursively.
+ * 
+ * @param     fs        The file descriptor
+ * @param     dirname   The directory to browse
+ * @returns   Nothing.  Calls itself though (recursion), to browse and list sub directories as well.
+ */
 void listDir(fs::FS &fs, const char* dirname){
     
     __debug("Directory: %s\r\n", dirname);
@@ -300,7 +367,15 @@ void listDir(fs::FS &fs, const char* dirname){
     browseDir(root, 0);
 }
 
-
+/**
+ * Handles incoming characters from the Duet3D serial port (usually the PanelDue plug).
+ * This method parses the character stream for a "\s" sequence, which will route all subsequent
+ * characters until the next "\n" (Linefeed or Newline) to the SMuFF instead of the PanelDue.
+ * Otherwise, it will forward all data to the PanelDue serial port and - if the Bluetooth mirror 
+ * function is enabled - also to the Bluetooth serial port.
+ * 
+ * @returns Nothing.
+ */
 void handleDuetSerial() {
     char in = SerialDuet.read();
     dataCntDuet++;
@@ -337,12 +412,28 @@ void handleDuetSerial() {
     }
 }
 
+/**
+ * Handles incoming characters from the PanelDue and passes them to the Duet3D.
+ * 
+ * @returns   Nothing.
+ */
 void handlePanelDueSerial() {
   char in = SerialPanelDue.read();
   dataCntPanelDue++;
   SerialDuet.write(in);
 }
 
+/**
+ * Handles incoming characters from the SMuFF.
+ * This routine scans the character stream for a escape sequence (starting with the ESC character 27 or 0x1b).
+ * The escape sequences allow to set or reset a specific output pin on the ESP.
+ * Those signal are used to trigger the endstop pins on the Duet3D, which are used to stop/continue the processing
+ * of the current macro running on the Duet3D. 
+ * If no escape sequence is present, the data received is passed on to the Duet3D
+ * (which works only in Serial mode, not in I2C mode).
+ * 
+ * @returns   Nothing.
+ */
 void handleSmuffSerial() {
   char in = SerialSmuff.read();
   dataCntSmuff++;
@@ -399,6 +490,14 @@ void handleSmuffSerial() {
   SerialDuet.write(in);
 }
 
+/**
+ * Handles incoming characters from the Bluetooth serial port (SPP).
+ * In debug mode, this routine allows you to request the status of the ESP 
+ * and list the contents of the SPIFFS.
+ * In Bluetooth mirror mode it passes the data coming from the Bluetooth port to the Duet3D. 
+ * 
+ * @returns   Nothing.
+ */
 void handleBluetoothSerial() {
   char in = SerialBT.read();
   SerialDuet.write(in);
@@ -457,17 +556,37 @@ void handleBluetoothSerial() {
     }
   }
   else {
-    SerialDuet.write(in);
+    if(!_config.i2cMode) {
+      SerialDuet.write(in);
+    }
   }
 }
 
+/**
+ * Handles incoming bytes from the I2C/TWI port.
+ * Send any byte received directly to the SMuFF without parsing or processing.
+ * 
+ * @param     bytes   The number of bytes in the buffer
+ * @returns   Nothing.
+ */
 void handleI2C(int bytes)  {
   for(int i=0; i < bytes; i++) {
     __debug("%c", i2cBuffer[i]);
+    SerialSmuff.write(i2cBuffer[i]);
     dataCntI2C++;
   }
 }
 
+/**
+ * Method used to initialize the I2C in SLAVE mode as published by Espressif.
+ * Be aware, that this method doesn't use the SDA/SCL pins normally used for the communication
+ * in I2C master mode but the  I2C_SLAVE_SDA_IO, I2C_SLAVE_SCL_IO pins instead 
+ * (see definition at the very start of this file).
+ * Using the internal pullups should be suffienct. If not, consider turning them off and add 
+ * external pullups instead.
+ * 
+ * @returns   The current initializing status.  
+ */
 static esp_err_t i2c_slave_init()
 {
     i2c_port_t i2c_slave_port = I2C_NUM_0;
@@ -484,6 +603,12 @@ static esp_err_t i2c_slave_init()
     return i2c_driver_install(i2c_slave_port, conf_slave.mode, I2C_SLAVE_RX_BUF_LEN, I2C_SLAVE_TX_BUF_LEN, 0);
 }
 
+/**
+ * Default Arduino setup routine.
+ * Sets up the whole environment.
+ * 
+ * @returns   Nothing.
+ */
 void setup() {
 
   pinMode(LED_PIN, OUTPUT);
@@ -499,26 +624,34 @@ void setup() {
   SerialBT.begin(_hostname);
 
   SPIFFS.begin(true);
-  readConfig();
+  readConfig();         // read the JSON config file from SPIFFS
 
-  delay(3000);
-
-  setupWiFi();
+  setupWiFi();          // setup everything
   setupOTA();
   setupWebServer();
   setupMdns();
 
+  // initialize ports
   SerialSmuff.begin(baudrate, SERIAL_8N1, RXD1, TXD1);
   SerialPanelDue.begin(baudrate, SERIAL_8N1, RXD2, TXD2);
   i2c_slave_init();
 }
 
+/**
+ * Default Arduino processing loop.
+ * 
+ * @returns Nothing.
+ */
 void loop() {
   if(SerialDuet.available()) {
-    handleDuetSerial();
+    if(!_config.i2cMode) {
+      handleDuetSerial();
+    }
   }
   if(SerialPanelDue.available()) {
-    handlePanelDueSerial();
+    if(!_config.i2cMode) {
+      handlePanelDueSerial();
+    }
   }
   if(SerialSmuff.available()) {
     handleSmuffSerial();

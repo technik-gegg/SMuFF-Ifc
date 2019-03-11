@@ -2,8 +2,17 @@
 #include <stdio.h>
 #include <string.h>
 
-const char* key = "{22A0F376-2FE1-496E-9BE5-6797DF9844FA}";
+// just a random key used for encryption/decryption. 
+// Feel free to modify this.
+const char* key = "{22A0F376-2FE1-496E-9BE5-6797DF9844FA}"; 
 
+/**
+ * Method to encrypt a string using AES.
+ * 
+ * @param   input   The plain string.
+ * @param   output  The container for the encrypted string.
+ * @returns   Nothing.
+ */
 void cipher(unsigned char* input, unsigned char* output) {
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
@@ -12,6 +21,13 @@ void cipher(unsigned char* input, unsigned char* output) {
   mbedtls_aes_free(&aes);
 }
 
+/**
+ * Method to decrypt a string using AES.
+ * 
+ * @param   input   The encrypted string.
+ * @param   output  The container for the decrypted string.
+ * @returns   Nothing.
+ */
 void decipher(unsigned char* input, unsigned char* output) {
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
