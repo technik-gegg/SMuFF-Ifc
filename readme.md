@@ -38,9 +38,22 @@ To configure the SMuFF-Ifc, first upload the firmware and the file system (stuff
 There you'll be able to modify the settings comfortabely. 
 Alternatively, you can edit the config.json file from the **data** directory in order to achive the same.
 
+# Wiring
+As for the wiring, you have two different options. For Mode 1 & 2:
+![Mode 1&2][5]
+
+And for Mode 3 & 4 this:
+![Mode 3&4][6]
+
+Although the picture above shows the Duet3D connectors, it's more or less the same on Marlin compatible boards. You only have to figure out yourself, where the I2C/TWI pins are (usually named as SDA/SCL), the Ground and the +5V and at least the E0 endstop (usually used as filament monitor for the extruder). You may use other input pins instead of the E0 endstop but you may end up reconfiguring the Marlin firmware.
+
+
+
 [SMuFF]: https://github.com/technik-gegg/SMuFF
 [1]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_full.png "Mode 1"
 [2]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_serial.png "Mode 2"
 [3]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_I2C_Duet.png "Mode 3"
 [4]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_I2C_Marlin.png "Mode 4"
+[5]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Wiring_Duet3D_ESP32_Serial.png "Wiring Serial connection"
+[6]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Wiring_Duet3D_ESP32_I2C.png "Wiring I2C connection"
 
