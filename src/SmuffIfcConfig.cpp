@@ -8,7 +8,7 @@ SmuffIfcConfig _config;
  * Method to read the interface settings from the JSON configuration file
  * using AdruinoJson library.
  * 
- * @returns   Nothing.
+ * @returns   Nothing. Populates the _config structure though.
  */
 void readConfig() {
     StaticJsonBuffer<512> jsonBuffer;
@@ -35,7 +35,13 @@ void readConfig() {
       cfg.close();
     }
 }
-  
+
+/**
+ * Method to write the interface settings to the JSON configuration file
+ * using AdruinoJson library.
+ * 
+ * @returns   Nothing.
+ */  
 void writeConfig() {
     StaticJsonBuffer<512> jsonBuffer;
 
