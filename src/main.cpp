@@ -150,11 +150,11 @@ void setupOTA() {
 		__debug("SMuFF-OTA: Progress: %u%%\r", (progress / (total / 100)));
 	}).onError([](ota_error_t error) {
 		__debug("SMuFF-OTA: Error[%u]: ", error);
-		if (error == OTA_AUTH_ERROR) __debug("SMuFF-OTA: Auth Failed\n");
-		else if (error == OTA_BEGIN_ERROR) __debug("SMuFF-OTA: Begin Failed\n");
-		else if (error == OTA_CONNECT_ERROR) __debug("SMuFF-OTA: Connect Failed\n");
-		else if (error == OTA_RECEIVE_ERROR) __debug("SMuFF-OTA: Receive Failed\n");
-		else if (error == OTA_END_ERROR) __debug("SMuFF-OTA: End Failed\n");
+		if (error == OTA_AUTH_ERROR)          __debug("Auth Failed\n");
+		else if (error == OTA_BEGIN_ERROR)    __debug("Begin Failed\n");
+		else if (error == OTA_CONNECT_ERROR)  __debug("Connect Failed\n");
+		else if (error == OTA_RECEIVE_ERROR)  __debug("Receive Failed\n");
+		else if (error == OTA_END_ERROR)      __debug("End Failed\n");
 	});
 	ArduinoOTA.begin();
 }
@@ -166,13 +166,15 @@ void setupOTA() {
  */
 void setupWiFi() {
   unsigned char output[16];
-  
+
+  WiFi.mode(WIFI_AP_STA);   // always use AP + STA mode
+
   if(!_config.isAP) {
     getDecipherdPwd(output);
-    WiFi.mode(WIFI_STA);
     esp_wifi_set_ps(WIFI_PS_NONE);
     WiFi.begin(_config.ssid, (char*)output);
-  
+    delay(1000);
+
     wl_status_t stat;
     int t = millis();
     do {
@@ -199,17 +201,18 @@ void setupWiFi() {
     localIp = WiFi.localIP();
   }
   
-  if(_config.isAP) {
-    WiFi.mode(WIFI_AP);
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    String appendix = WiFi.softAPmacAddress().substring(9);
-    appendix.replace(":", "");
-    _hostname = String(HOST_NAME) + "_" + appendix;
-    WiFi.softAPConfig(apLocalIp, apGateway, apNetmask);
-    WiFi.softAP(_hostname.c_str(), passwordAP);
-    delay(10);
-    localIp =  WiFi.softAPIP();
+  // always enable AP mode - just in case
+  esp_wifi_set_ps(WIFI_PS_NONE);
+  String appendix = WiFi.softAPmacAddress().substring(9);
+  appendix.replace(":", "");
+  _hostname = String(HOST_NAME) + "_" + appendix;
+  if(!WiFi.softAPConfig(apLocalIp, apGateway, apNetmask))  {
+    __debug("WiFi AP config failed!\n");
   }
+  WiFi.softAP(_hostname.c_str(), passwordAP);
+  delay(1000);
+  if(_config.isAP)
+    localIp =  WiFi.softAPIP();
 
   if(WiFi.status() == WL_CONNECTED) {
     for(int i=0; i< 10; i++) {
@@ -220,7 +223,7 @@ void setupWiFi() {
     SerialDuet.printf("M118 S\"[SMuFF-IFC] IP-Address: %s\"\n", localIp.toString().c_str());
   }
   else {
-    SerialDuet.println("M118 S\"[SMuFF-IFC] Failed to connect to WiFi network.\"");
+    SerialDuet.printf("M118 S\"[SMuFF-IFC] Failed to connect to WiFi network %s.\"", localIp.toString().c_str());
   }
 }
 
@@ -232,7 +235,9 @@ void setupWiFi() {
  */
 void setupMdns() {
   if(MDNS.begin(_hostname.c_str())) {
-    MDNS.addService("http", "tcp", 80);
+    MDNS.addService("_http", "_tcp", 80);
+    MDNS.addServiceTxt("_http", "_tcp", "board", "ESP32");
+    MDNS.addServiceTxt("_http", "_tcp", "interface", "SMuFF");
     mdnsRunning = true;
   } 
   else {
@@ -258,13 +263,13 @@ void setupMdns() {
 void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len)
 {
   if(type == WS_EVT_CONNECT){
-    __debug(">>> ws[%s][%u] has connected\n", server->url(), client->id());
+    __debug(">>> WebSock client #%u has connected\n", client->id());
   } 
   else if(type == WS_EVT_DISCONNECT){
-    __debug(">>> ws[%s][%u] has disconnected\n", server->url(), client->id());
+    __debug(">>> WebSock client #%u has disconnected\n", client->id());
   } 
   else if(type == WS_EVT_ERROR){
-    __debug(">>> ws[%s][%u] error(%u): %s\n", server->url(), client->id(), *((uint16_t*)arg), (char*)data);
+    __debug(">>> WebSock client #%u error(%u): %s\n", client->id(), *((uint16_t*)arg), (char*)data);
   } 
   else if(type == WS_EVT_DATA){
     AwsFrameInfo* info = (AwsFrameInfo*)arg;
@@ -379,6 +384,8 @@ void listDir(fs::FS &fs, const char* dirname){
 void handleDuetSerial() {
     char in = SerialDuet.read();
     dataCntDuet++;
+    if(smuffMode && in != '\\')
+      __debug("[%02X]", in);
     if(in == '\\') {
       while(!SerialDuet.available())  
         ;                             // wait for next character
@@ -391,7 +398,8 @@ void handleDuetSerial() {
         case 'b': in = '\b'; break;
         case 't': in = '\t'; break;
         case 's': in = 0;   // mode 1 will route data to SMuFF instead to the PanelDue
-                  smuffMode = true; 
+                  smuffMode = true;
+                  __debug("SMuFF mode\n"); 
                   break;
         default:  SerialPanelDue.write(in);
                   SerialPanelDue.write(nxt);
@@ -399,7 +407,8 @@ void handleDuetSerial() {
       }
     }
     if(smuffMode) {
-      SerialSmuff.write(in);
+      if(in != 0)
+        SerialSmuff.write(in);
     }
     else {
       SerialPanelDue.write(in);
@@ -407,8 +416,9 @@ void handleDuetSerial() {
         SerialBT.write(in);
       }
     }
-    if (in == '\n') {
-        smuffMode = false;
+    if(in == '\n' && smuffMode) {
+      smuffMode = false;
+      __debug("\nPanelDue mode\n"); 
     }
 }
 
@@ -504,8 +514,13 @@ void handleBluetoothSerial() {
   if(!_config.btMirrorMode) {
     if(in == '1') {
       _config.i2cMode = !_config.i2cMode;
+       __debug("I2C mode: %s\n", _config.i2cMode ? "Enabled" : "Disabled");
     }
     if(in == '2') {
+      int n = WiFi.scanNetworks();
+      for (int i = 0; i < n; ++i) {
+        __debug(">>> %3d\t%s\t%d\t%s\n", i+1,  WiFi.SSID(i).c_str(), WiFi.RSSI(i), WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "*" : "");
+      }  
     }
     if(in == '3') {
     }
@@ -516,38 +531,15 @@ void handleBluetoothSerial() {
       __debug("Status\n---------------------------------\n");
       wifi_mode_t mode;
       esp_wifi_get_mode(&mode);
-      __debug("WiFi mode: ");
-      switch(mode) {
-        case WIFI_MODE_NULL: 
-          __debug("None\n"); 
-          break;
-        case WIFI_MODE_AP: 
-          __debug("AP\n"); 
-          break;
-        case WIFI_MODE_STA: 
-          __debug("STA\n"); 
-          __debug("WiFi SSID: %s\n", WiFi.SSID().c_str());
-          break;
-        case WIFI_MODE_APSTA: 
-          __debug("AP+STA\n"); 
-          break;
-        case WIFI_MODE_MAX: 
-          __debug("MAX\n"); 
-          break;
-      }
+      WiFi.printDiag(SerialBT);
       if(mode != WIFI_MODE_NULL)
         __debug("IP-Address: %s\n", localIp.toString().c_str());
-      if(WiFi.status() == WL_CONNECTED)
-        __debug("Connected to WiFi AP\n");
-      if(webServerRunning)
-        __debug("Web server started\n");  
-      if(mdnsRunning)
-        __debug("mDNS started (%s.local)...\n", _hostname.c_str());  
-
+      __debug("Wifi %s connected\n", WiFi.status() == WL_CONNECTED ? "" : "not");
+      __debug("Web %s server started\n", webServerRunning ? "" : "not");  
+      __debug("mDNS %s started (%s.local)...\n", mdnsRunning ? "" : "not", _hostname.c_str());  
       __debug("Bluetooth mode: %s\n", _config.btMirrorMode ? "Mirror" : "Debug");
       __debug("I2C mode: %s\n", _config.i2cMode ? "Enabled" : "Disabled");
-      
-      __debug("\nData received so far:\n");
+      __debug("\nTraffic:\n");
       __debug("\tSMuFF: %u bytes\n", dataCntSmuff);
       __debug("\tDuet3D: %u bytes\n", dataCntDuet);
       __debug("\tPanelDue: %u bytes\n", dataCntPanelDue);
@@ -625,6 +617,7 @@ void setup() {
 
   SPIFFS.begin(true);
   readConfig();         // read the JSON config file from SPIFFS
+  delay(1000);
 
   setupWiFi();          // setup everything
   setupOTA();

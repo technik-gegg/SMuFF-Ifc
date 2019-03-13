@@ -129,7 +129,7 @@ void parseCommand(const char* data, AsyncWebSocketClient* client)
   else if(cmd == "DataCounter") {
     sprintf(b, "C:%lu\t%lu\t%lu\t%lu", dataCntDuet, dataCntPanelDue, dataCntSmuff, dataCntI2C);
     client->text(b);
-    __debug(">>> %s\n", b);
+    //__debug(">>> %s\n", b);
   }
   else {
     client->text("E:Unknown function");
