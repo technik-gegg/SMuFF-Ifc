@@ -50,7 +50,7 @@ Although the picture above shows the Duet3D connectors, it's more or less the sa
 # Known issues
 When programming the ESP32, you may encounter an "Failed to connect..." error from within the IDE. A description of this problem and the solution can be found [here][7].
 
-[SMuFF]: https://github.com/technik-gegg/SMuFF
+[SMuFF]: https://github.com/technik-gegg/SMuFF-1.1
 [1]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_full.png "Mode 1"
 [2]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_serial.png "Mode 2"
 [3]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Config_I2C_Duet.png "Mode 3"
