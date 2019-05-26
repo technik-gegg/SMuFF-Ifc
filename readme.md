@@ -59,3 +59,6 @@ When programming the ESP32, you may encounter an "Failed to connect..." error fr
 [6]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Wiring_Duet3D_ESP32_I2C.png "Wiring I2C connection"
 [7]: https://randomnerdtutorials.com/solved-failed-to-connect-to-esp32-timed-out-waiting-for-packet-header/
 
+# Duet3D scripts
+In the according folder you'll find a ZIP file containing all the scripts you need for the tool change.
+It's divided into a **sys** and a **macros** folder. Upload those scripts accordingly on your Duet3D SD-Card.
