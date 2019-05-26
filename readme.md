@@ -70,4 +70,4 @@ To give you a better overview how the scripts are related to each other, here's 
 ![Workflow overview][8]
 
 
-For more detailed instructions, head over to the [SMuFF Firmware Wiki][9]. 
+For more detailed instructions on this topic, head over to the [SMuFF Firmware Wiki][9]. 
