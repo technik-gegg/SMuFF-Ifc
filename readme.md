@@ -65,8 +65,17 @@ When programming the ESP32, you may encounter an "Failed to connect..." error fr
 [5]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Wiring_Duet3D_ESP32_Serial.png "Wiring Serial connection"
 [6]: https://github.com/technik-gegg/SMuFF-Ifc/blob/master/images/Wiring_Duet3D_ESP32_I2C.png "Wiring I2C connection"
 [7]: https://randomnerdtutorials.com/solved-failed-to-connect-to-esp32-timed-out-waiting-for-packet-header/
+[8]: https://github.com/technik-gegg/SMuFF-1.1/blob/master/images/Scripts%20Workflow.png "Duet3D scripts workflow"
+[9]: https://github.com/technik-gegg/SMuFF-1.1/wiki/Interfacing-the-Duet3D-boards-(WiFi,-Ethernet,-Maestro) "Interfacing Duet3D boards"
 
 # Duet3D scripts
 
 In the according folder you'll find a ZIP file containing all the scripts you need for the tool change.
 It's divided into a **sys** and a **macros** folder. Upload those scripts accordingly on your Duet3D SD-Card.
+
+To give you a better overview how the scripts are related to each other, here's an workflow overview:
+
+![Workflow overview][8]
+
+
+For more detailed instructions on this topic, head over to the [SMuFF Firmware Wiki][9]. 
