@@ -16,6 +16,7 @@ struct SmuffIfcConfig {
   bool i2cMode = false;
   bool i2cPullup = true;
   int  i2cAddress = 0x58;
+  bool useNextion = false;
 };
 
 void readConfig();

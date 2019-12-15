@@ -9,6 +9,7 @@
     "Enabled": false,
     "Pullup": true,
     "Address": 88
-  }
+  },
+  "UseNextion": false
 }
 

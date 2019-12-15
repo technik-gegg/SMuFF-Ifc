@@ -17,7 +17,6 @@
  *
  */
 #include <Arduino.h>
-#include <ArduinoOTA.h>
 #include <HardwareSerial.h>
 #include <BluetoothSerial.h>
 #include <Wire.h>
@@ -30,6 +29,7 @@
 #include "Cipher.h"
 #include "WebSocketTools.h"
 #include "driver/i2c.h"
+#include <ArduinoJson.h>
 
 #define HOST_NAME     "smuffifc"                  // basic host name
 #define RXD0          3
@@ -50,14 +50,17 @@
 #define I2C_SLAVE_SCL_IO      GPIO_NUM_26
 #define I2C_SLAVE_SDA_IO      GPIO_NUM_25
 
+#define MAX_JSON              2000        // 2K of temporary buffer for the JSON data coming from Duet3D
+#define DUET_STATUS_TIMEOUT   500         // timeout for quering Duet3D status (M408)
+
 extern SmuffIfcConfig  _config;
 
 AsyncWebServer  webServer(80);
-AsyncWebSocket  winsock("/smuffifc");     // access at ws://[esp ip-address]/smuffifc (see index.html)
+AsyncWebSocket  wsock("/smuffifc");       // access at ws://[esp ip-address]/smuffifc (see index.html)
 HardwareSerial  SerialDuet(0);
 HardwareSerial  SerialSmuff(1);
 HardwareSerial  SerialPanelDue(2);
-BluetoothSerial SerialBT;                 // used for debugging or mirroring trafic to PanelDue 
+BluetoothSerial SerialBT;                 // used for debugging or mirroring traffic to PanelDue 
 
 const char* passwordAP = "12345678";      // default password when in AP mode
 
@@ -72,13 +75,18 @@ static int    pinSelected = 0;
 IPAddress     localIp;
 bool          webServerRunning = false;
 bool          mdnsRunning = false;
-unsigned long dataCntSmuff = 0;         // data counters for debugging
+unsigned long dataCntSmuff = 0;           // data counters for debugging
 unsigned long dataCntDuet = 0;
 unsigned long dataCntPanelDue = 0;
 unsigned long dataCntI2C = 0;
 byte          i2cBuffer[40];
+int           bracketCnt = 0;
+int           jsonPtr = 0;
+char          jsonData[MAX_JSON];         // temporary buffer for json data
+static unsigned long statusTimer = 0; 
 
 String _hostname = HOST_NAME;
+
 
 /**
  * Function to output some debug information to a serial port (Bluetooth in this case).
@@ -130,33 +138,15 @@ void getDecipherdPwd(unsigned char* output)
 }
 
 /**
- * Sets up the Over-The-Air update feature of the ESP.
- * Might be useful if it comes to update the SMuFF-Ifc firmware while attached to the other electronics. 
+ * Sets up the device name by adding the last 6 digits of the MAC address to it.
+ * This way we'll get a unique name for each device around.
  * 
- * @returns	  Nothing
+ * @returns   Nothing
  */
-void setupOTA() {
-
-	ArduinoOTA.onStart([]() {
-		String type;
-		if (ArduinoOTA.getCommand() == U_FLASH)
-			type = "sketch";
-		else // U_SPIFFS
-			type = "filesystem";
-			__debug("SMuFF-OTA: Start updating %s\n", type);
-		}).onEnd([]() {
-		__debug("SMUFF-OTA: End\n");
-	}).onProgress([](unsigned int progress, unsigned int total) {
-		__debug("SMuFF-OTA: Progress: %u%%\r", (progress / (total / 100)));
-	}).onError([](ota_error_t error) {
-		__debug("SMuFF-OTA: Error[%u]: ", error);
-		if (error == OTA_AUTH_ERROR)          __debug("Auth Failed\n");
-		else if (error == OTA_BEGIN_ERROR)    __debug("Begin Failed\n");
-		else if (error == OTA_CONNECT_ERROR)  __debug("Connect Failed\n");
-		else if (error == OTA_RECEIVE_ERROR)  __debug("Receive Failed\n");
-		else if (error == OTA_END_ERROR)      __debug("End Failed\n");
-	});
-	ArduinoOTA.begin();
+void setupDeviceName() {
+  String appendix = WiFi.macAddress().substring(9);
+  appendix.replace(":", "");
+  _hostname = String(HOST_NAME) + "_" + appendix;
 }
 
 /**
@@ -165,7 +155,7 @@ void setupOTA() {
  * @returns	  Nothing
  */
 void setupWiFi() {
-  unsigned char output[16];
+  unsigned char output[64];
 
   WiFi.mode(WIFI_AP_STA);   // always use AP + STA mode
 
@@ -195,36 +185,32 @@ void setupWiFi() {
     } while(stat != WL_CONNECTED);
     digitalWrite(LED_PIN, LOW);
     
-    if(WiFi.status() != WL_CONNECTED) {
-      _config.isAP = true;
-    }
     localIp = WiFi.localIP();
+    if(WiFi.status() == WL_CONNECTED) {
+      // signal "connected to WiFi network"
+      for(int i=0; i< 10; i++) {
+        blinkLED();
+        delay(150);
+      }
+      //__debug("IP-Address: %s\n", localIp.toString().c_str());
+      SerialDuet.printf(PSTR("M118 S\"[SMuFF-IFC] IP-Address: %s\"\n"), localIp.toString().c_str());
+    }
+    else {
+      _config.isAP = true;
+    }  
   }
   
   // always enable AP mode - just in case
   esp_wifi_set_ps(WIFI_PS_NONE);
-  String appendix = WiFi.softAPmacAddress().substring(9);
-  appendix.replace(":", "");
-  _hostname = String(HOST_NAME) + "_" + appendix;
+  WiFi.softAP(_hostname.c_str(), passwordAP);
+  delay(2000);
+  // re-configure AP IP-Address
   if(!WiFi.softAPConfig(apLocalIp, apGateway, apNetmask))  {
     __debug("WiFi AP config failed!\n");
   }
-  WiFi.softAP(_hostname.c_str(), passwordAP);
-  delay(1000);
   if(_config.isAP)
     localIp =  WiFi.softAPIP();
 
-  if(WiFi.status() == WL_CONNECTED) {
-    for(int i=0; i< 10; i++) {
-      blinkLED();
-      delay(150);
-    }
-    __debug("IP-Address: %s\n", localIp.toString().c_str());
-    SerialDuet.printf("M118 S\"[SMuFF-IFC] IP-Address: %s\"\n", localIp.toString().c_str());
-  }
-  else {
-    SerialDuet.printf("M118 S\"[SMuFF-IFC] Failed to connect to WiFi network %s.\"", localIp.toString().c_str());
-  }
 }
 
 /**
@@ -244,6 +230,7 @@ void setupMdns() {
     mdnsRunning = false;
   }
 }
+
 
 /**
  * Event handler for the WebSocket communication.
@@ -289,7 +276,7 @@ void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType 
       } 
       else {
         client->text("E:No binary data supported yet");
-        __debug("Binary data received from WinSock\n");
+        __debug("Binary data received from WebSock\n");
         for(size_t i=0; i < info->len; i++){
           __debug("%02x ", data[i]);
         }
@@ -306,9 +293,8 @@ void onEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType 
  */
 void setupWebServer() {
 
-  winsock.onEvent(onEvent);
-  webServer.addHandler(&winsock);
-  //webServer.rewrite("/index.html", "index-ap.html").setFilter(ON_AP_FILTER);
+  wsock.onEvent(onEvent);
+  webServer.addHandler(&wsock);
   webServer.serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html").setCacheControl("max-age=1");
   webServer.serveStatic("/js", SPIFFS, "/www/js/");
   webServer.serveStatic("/css", SPIFFS, "/www/css/");
@@ -411,10 +397,46 @@ void handleDuetSerial() {
         SerialSmuff.write(in);
     }
     else {
-      SerialPanelDue.write(in);
-      if(_config.btMirrorMode) {
-        SerialBT.write(in);
+      // If we do not have configured a Nextion Display, just pass the 
+      // data to the PanelDue
+      if(!_config.useNextion)
+      {
+        SerialPanelDue.write(in);
+        if(_config.btMirrorMode) {
+          SerialBT.write(in);
+        }
       }
+      else
+      {
+        // Otherwise we've replaced the PanelDue with an Nextion Display
+        // and therfore we need to handle the data manually 
+        // Firstly, we collect all data coming in
+        if(in=='{')
+          bracketCnt++;
+        else if(in=='}')
+          bracketCnt--;
+        if(jsonPtr < MAX_JSON)
+        {
+          jsonData[jsonPtr++]=in;
+        }
+        else
+        {
+          // Buffer overflow
+          __debug("\nJSON data buffer overflow\n"); 
+        }
+
+        if(bracketCnt==0)
+        {
+          // after the last closing bracket, JSON data is complete - process it
+          DynamicJsonDocument doc(MAX_JSON);
+          auto error = deserializeJson(doc, jsonData);
+          if (error) {
+            __debug("JSON data from Duet3D possibly corrupted!\n");
+          } 
+          jsonPtr = 0;
+        }
+      }
+      
     }
     if(in == '\n' && smuffMode) {
       smuffMode = false;
@@ -430,7 +452,17 @@ void handleDuetSerial() {
 void handlePanelDueSerial() {
   char in = SerialPanelDue.read();
   dataCntPanelDue++;
-  SerialDuet.write(in);
+  // If we do not have configured a Nextion Display, just pass the 
+  // data coming in to the Duet3D
+  if(!_config.useNextion)
+  {
+    SerialDuet.write(in);
+  }
+  else
+  {
+    // do nothing, the Nextion library will handle it    
+  }
+  
 }
 
 /**
@@ -462,7 +494,6 @@ void handleSmuffSerial() {
       case 3: pinSelected = SIGNAL3_PIN; break;
       case 4: pinSelected = LED_PIN; break;
     }
-    //SerialDuet.printf("Pin selected: %d\n", pinSelected);
     return;
   }
   /*
@@ -612,6 +643,7 @@ void setup() {
   digitalWrite(SIGNAL2_PIN, LOW);
   digitalWrite(SIGNAL3_PIN, LOW);
 
+  setupDeviceName();
   SerialDuet.begin(baudrate, SERIAL_8N1, RXD0, TXD0);
   SerialBT.begin(_hostname);
 
@@ -620,14 +652,25 @@ void setup() {
   delay(1000);
 
   setupWiFi();          // setup everything
-  setupOTA();
   setupWebServer();
   setupMdns();
+  /* for future use
+  if(_config.useNextion)
+    setupNextion();
+  */
 
   // initialize ports
   SerialSmuff.begin(baudrate, SERIAL_8N1, RXD1, TXD1);
   SerialPanelDue.begin(baudrate, SERIAL_8N1, RXD2, TXD2);
   i2c_slave_init();
+
+  // signal init done via on-board LED
+  for(int i=0; i<3; i++) {
+    blinkLED();
+    delay(500);
+    blinkLED();
+    delay(500);
+  }
 }
 
 /**
@@ -658,6 +701,15 @@ void loop() {
       handleI2C(size);
     }
   }
+  if(_config.useNextion) {
+    if(millis()-statusTimer > DUET_STATUS_TIMEOUT) {
+      // SerialDuet.println("M408 S3"); // request the current status from Duet3D
+      statusTimer = millis();
+    }
+    /* for future use */
+    // nexLoop(nextionListeners);
+  }
+  wsock.cleanupClients();
 }
 
 
